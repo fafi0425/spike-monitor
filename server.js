@@ -14,6 +14,7 @@
 
 require("dotenv").config();
 const express   = require("express");
+const { kv }    = require("@vercel/kv");
 const axios     = require("axios");
 const cors      = require("cors");
 const RssParser = require("rss-parser");
@@ -34,9 +35,29 @@ const SLACK_WEBHOOK = process.env.SLACK_WEBHOOK || "";
 const NEWS_API_KEY  = process.env.NEWS_API_KEY  || "";   // newsapi.org free key
 const AV_API_KEY    = process.env.AV_API_KEY    || "";   // alphavantage.co free key
 
-// In-memory spike log (last 200 spikes, newest first)
-const spikeLog = [];
-const MAX_LOG  = 200;
+// Spike storage key in Vercel KV
+const KV_KEY  = "spike_log";
+const MAX_LOG = 200;
+
+// Helper: get spike log from KV
+async function getSpikeLog() {
+  try {
+    const log = await kv.get(KV_KEY);
+    return Array.isArray(log) ? log : [];
+  } catch(e) {
+    console.error("KV get error:", e.message);
+    return [];
+  }
+}
+
+// Helper: save spike log to KV
+async function saveSpikeLog(log) {
+  try {
+    await kv.set(KV_KEY, log.slice(0, MAX_LOG));
+  } catch(e) {
+    console.error("KV set error:", e.message);
+  }
+}
 
 // ─── Asset class router ───────────────────────────────────────────────────────
 // Given a symbol, return which group it belongs to and extract the base currency
@@ -269,11 +290,12 @@ app.post("/spike", async (req, res) => {
     })
   );
 
-  // Add to in-memory log
+  // Save to Vercel KV
+  const currentLog = await getSpikeLog();
   enriched.forEach(sp => {
-    spikeLog.unshift({ ...sp, receivedAt: new Date().toISOString() });
+    currentLog.unshift({ ...sp, receivedAt: new Date().toISOString() });
   });
-  if (spikeLog.length > MAX_LOG) spikeLog.length = MAX_LOG;
+  await saveSpikeLog(currentLog);
 
   // Send consolidated Slack alert
   await sendSlackAlert(enriched, reportTime, symbolsLoaded);
@@ -282,13 +304,14 @@ app.post("/spike", async (req, res) => {
 });
 
 // GET /spikes — dashboard polls this for live data
-app.get("/spikes", (req, res) => {
-  res.json(spikeLog.slice(0, 50));
+app.get("/spikes", async (req, res) => {
+  const log = await getSpikeLog();
+  res.json(log.slice(0, 50));
 });
 
-// DELETE /spikes/clear — wipe spike log from dashboard
-app.delete("/spikes/clear", (req, res) => {
-  spikeLog.length = 0;
+// DELETE /spikes/clear — wipe spike log from KV
+app.delete("/spikes/clear", async (req, res) => {
+  await kv.del(KV_KEY);
   console.log(`[${new Date().toISOString()}] Spike log cleared`);
   res.json({ ok: true, message: "Spike log cleared" });
 });
