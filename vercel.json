@@ -1,14 +1,8 @@
 {
-  "version": 2,
-  "functions": {
-    "server.js": {
-      "runtime": "@vercel/node@3"
-    }
-  },
-  "routes": [
-    { "src": "/spike",        "dest": "/server.js" },
-    { "src": "/spikes/clear", "dest": "/server.js" },
-    { "src": "/spikes",       "dest": "/server.js" },
-    { "src": "/(.*)",         "dest": "/server.js" }
+  "rewrites": [
+    { "source": "/spike",        "destination": "/server.js" },
+    { "source": "/spikes/clear", "destination": "/server.js" },
+    { "source": "/spikes",       "destination": "/server.js" },
+    { "source": "/(.*)",         "destination": "/server.js" }
   ]
 }
