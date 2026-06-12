@@ -26,7 +26,7 @@ const cache  = new NodeCache({ stdTTL: 300 }); // cache news 5 min
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.resolve(__dirname, "public")));
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const PORT          = process.env.PORT         || 3000;
@@ -285,9 +285,16 @@ app.get("/spikes", (req, res) => {
   res.json(spikeLog.slice(0, 50));
 });
 
+// DELETE /spikes/clear — wipe spike log from dashboard
+app.delete("/spikes/clear", (req, res) => {
+  spikeLog.length = 0;
+  console.log(`[${new Date().toISOString()}] Spike log cleared`);
+  res.json({ ok: true, message: "Spike log cleared" });
+});
+
 // GET / — serve dashboard
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  res.sendFile(path.resolve(__dirname, "public", "index.html"));
 });
 
 // ── Local dev: start server directly
