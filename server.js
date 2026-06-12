@@ -238,9 +238,11 @@ async function sendSlackAlert(spikes, reportTime, symbolsLoaded) {
     const tag    = sp.tfName === "H1-LIVE" ? "H1 🔴LIVE" : "H1 ✅CLOSED";
     detailLines += `\n• *${sp.symbol}* [${tag}]  *${sp.classif}*  ${sp.ratio}x ATR`;
     detailLines += `\n  Range: ${sp.range}  |  ATR20: ${sp.atr20}  |  @ ${sp.candleTime}`;
-    if (news.length > 0) {
+    if (news.length > 0 && news[0].title && news[0].url && news[0].url !== "#") {
       detailLines += `\n  📰 ${news[0].title}`;
       detailLines += `\n  🔗 ${news[0].url}`;
+    } else {
+      detailLines += `\n  📰 No related news found`;
     }
     detailLines += "\n";
   }
