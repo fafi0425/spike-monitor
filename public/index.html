@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Spike Monitor — MT5 Surveillance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:        #0a0c10;
+    --bg2:       #111318;
+    --bg3:       #181c24;
+    --border:    #222730;
+    --text:      #e2e8f0;
+    --muted:     #64748b;
+    --accent:    #f59e0b;
+    --major:     #ef4444;
+    --minor:     #f97316;
+    --elevated:  #3b82f6;
+    --live:      #22c55e;
+    --closed:    #94a3b8;
+    --mono:      "IBM Plex Mono", monospace;
+    --sans:      "Inter", sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 700; color: #000;
+  }
+
+  .logo h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  .logo span {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .pulse {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--live);
+    font-family: var(--mono);
+  }
+
+  .pulse-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--live);
+    animation: blink 1.6s ease-in-out infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.2; }
+  }
+
+  .last-update {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--muted);
+  }
+
+  /* ── Stats bar ── */
+  .stats-bar {
+    display: flex;
+    gap: 1px;
+    background: var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat {
+    flex: 1;
+    padding: 14px 20px;
+    background: var(--bg2);
+  }
+
+  .stat-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+
+  .stat-value {
+    font-size: 22px;
+    font-weight: 600;
+    font-family: var(--mono);
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .stat-value.major  { color: var(--major);  }
+  .stat-value.minor  { color: var(--minor);  }
+  .stat-value.live   { color: var(--live);   }
+
+  /* ── Main layout ── */
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 0;
+    height: calc(100vh - 113px);
+  }
+
+  /* ── Spike feed ── */
+  .feed {
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .feed-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+
+  .feed-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+
+  .filter-row {
+    display: flex;
+    gap: 6px;
+  }
+
+  .filter-btn {
+    padding: 3px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-size: 11px;
+    font-family: var(--mono);
+    cursor: pointer;
+    transition: all .15s;
+  }
+
+  .filter-btn.active, .filter-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(245,158,11,.08);
+  }
+
+  /* ── Spike card ── */
+  .spike-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color .15s;
+  }
+
+  .spike-card:hover { border-color: #333a48; }
+
+  .spike-card.major  { border-left: 3px solid var(--major); }
+  .spike-card.minor  { border-left: 3px solid var(--minor); }
+  .spike-card.live   { border-left: 3px solid var(--live);  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px 10px;
+  }
+
+  .card-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .classif-badge {
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    font-family: var(--mono);
+    letter-spacing: 0.05em;
+  }
+
+  .badge-major    { background: rgba(239,68,68,.15);  color: var(--major); }
+  .badge-minor    { background: rgba(249,115,22,.15); color: var(--minor); }
+  .badge-elevated { background: rgba(59,130,246,.15); color: var(--elevated); }
+
+  .symbol {
+    font-size: 15px;
+    font-weight: 600;
+    font-family: var(--mono);
+    letter-spacing: 0.02em;
+  }
+
+  .tf-tag {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    background: var(--bg3);
+    color: var(--muted);
+  }
+
+  .tf-tag.live-tag {
+    background: rgba(34,197,94,.12);
+    color: var(--live);
+  }
+
+  .ratio {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  .ratio.major { color: var(--major); }
+  .ratio.minor { color: var(--minor); }
+
+  .card-metrics {
+    display: flex;
+    gap: 24px;
+    padding: 0 16px 10px;
+  }
+
+  .metric { }
+  .metric-label { font-size: 10px; color: var(--muted); margin-bottom: 2px; }
+  .metric-value { font-family: var(--mono); font-size: 12px; color: var(--text); }
+
+  /* ── News section ── */
+  .news-section {
+    border-top: 1px solid var(--border);
+    padding: 10px 16px 12px;
+  }
+
+  .news-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .news-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 8px;
+  }
+
+  .news-item:last-child { margin-bottom: 0; }
+
+  .news-title {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text);
+  }
+
+  .news-link {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--accent);
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .news-link:hover { text-decoration: underline; }
+
+  .news-source {
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .no-news {
+    font-size: 12px;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    border-left: 1px solid var(--border);
+    background: var(--bg2);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sidebar-section {
+    border-bottom: 1px solid var(--border);
+    padding: 16px;
+  }
+
+  .sidebar-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  /* ── Group breakdown ── */
+  .group-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 0;
+  }
+
+  .group-name {
+    font-size: 12px;
+    color: var(--text);
+  }
+
+  .group-bar-wrap {
+    flex: 1;
+    margin: 0 10px;
+    height: 4px;
+    background: var(--bg3);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .group-bar {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--accent);
+    transition: width .4s ease;
+  }
+
+  .group-count {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    min-width: 18px;
+    text-align: right;
+  }
+
+  /* ── Recent news ticker ── */
+  .news-ticker {
+    padding: 0;
+  }
+
+  .ticker-item {
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+
+  .ticker-item:last-child { border-bottom: none; }
+
+  .ticker-sym {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    margin-bottom: 3px;
+  }
+
+  .ticker-headline {
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--text);
+  }
+
+  .ticker-source {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  /* ── Empty state ── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    height: 300px;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  .empty-icon { font-size: 36px; opacity: .4; }
+  .empty-text { font-size: 13px; }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .stats-bar { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    <div>
+      <h1>Spike Monitor</h1>
+      <span>MT5 Surveillance Dashboard</span>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="pulse">
+      <div class="pulse-dot"></div>
+      LIVE
+    </div>
+    <div class="last-update" id="lastUpdate">Waiting for data...</div>
+  </div>
+</header>
+
+<div class="stats-bar">
+  <div class="stat">
+    <div class="stat-label">Total Spikes Today</div>
+    <div class="stat-value" id="statTotal">0</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Major Spikes</div>
+    <div class="stat-value major" id="statMajor">0</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Minor Spikes</div>
+    <div class="stat-value minor" id="statMinor">0</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Live (Forming)</div>
+    <div class="stat-value live" id="statLive">0</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Symbols Monitored</div>
+    <div class="stat-value" id="statSymbols">151</div>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- Feed -->
+  <div class="feed">
+    <div class="feed-header">
+      <div class="feed-title">Spike Feed</div>
+      <div class="filter-row">
+        <button class="filter-btn active" onclick="setFilter('ALL')" id="f-ALL">ALL</button>
+        <button class="filter-btn" onclick="setFilter('MAJOR SPIKE')" id="f-MAJOR SPIKE">MAJOR</button>
+        <button class="filter-btn" onclick="setFilter('MINOR SPIKE')" id="f-MINOR SPIKE">MINOR</button>
+        <button class="filter-btn" onclick="setFilter('LIVE')" id="f-LIVE">LIVE</button>
+      </div>
+    </div>
+    <div id="spikeList">
+      <div class="empty-state">
+        <div class="empty-icon">📡</div>
+        <div class="empty-text">Waiting for MT5 spikes...<br/>Dashboard polls every 15 seconds.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title">Spikes by Group</div>
+      <div id="groupBreakdown">
+        <div style="color:var(--muted);font-size:12px;">No data yet</div>
+      </div>
+    </div>
+    <div class="sidebar-section" style="flex:1">
+      <div class="sidebar-title">Latest Headlines</div>
+      <div id="newsTicker">
+        <div style="color:var(--muted);font-size:12px;">No news yet</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  let allSpikes  = [];
+  let activeFilter = "ALL";
+
+  // ── Fetch & render ──────────────────────────────────────────────
+  async function fetchSpikes() {
+    try {
+      const res  = await fetch("/spikes");
+      const data = await res.json();
+      allSpikes  = data;
+      render();
+      document.getElementById("lastUpdate").textContent =
+        "Updated " + new Date().toLocaleTimeString();
+    } catch(e) {
+      console.error("Fetch error:", e);
+    }
+  }
+
+  function setFilter(f) {
+    activeFilter = f;
+    document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+    document.getElementById("f-" + f)?.classList.add("active");
+    render();
+  }
+
+  function render() {
+    const filtered = activeFilter === "ALL" ? allSpikes
+      : activeFilter === "LIVE"
+        ? allSpikes.filter(s => s.tfName === "H1-LIVE")
+        : allSpikes.filter(s => s.classif === activeFilter);
+
+    renderStats();
+    renderFeed(filtered);
+    renderSidebar();
+  }
+
+  // ── Stats bar ───────────────────────────────────────────────────
+  function renderStats() {
+    const today = new Date().toDateString();
+    const todaySpikes = allSpikes.filter(s =>
+      new Date(s.receivedAt).toDateString() === today
+    );
+    document.getElementById("statTotal").textContent = todaySpikes.length;
+    document.getElementById("statMajor").textContent =
+      todaySpikes.filter(s => s.classif === "MAJOR SPIKE").length;
+    document.getElementById("statMinor").textContent =
+      todaySpikes.filter(s => s.classif === "MINOR SPIKE").length;
+    document.getElementById("statLive").textContent =
+      todaySpikes.filter(s => s.tfName === "H1-LIVE").length;
+  }
+
+  // ── Feed ────────────────────────────────────────────────────────
+  function renderFeed(spikes) {
+    const el = document.getElementById("spikeList");
+    if (spikes.length === 0) {
+      el.innerHTML = `<div class="empty-state">
+        <div class="empty-icon">📡</div>
+        <div class="empty-text">No spikes match this filter yet.</div>
+      </div>`;
+      return;
+    }
+
+    el.innerHTML = spikes.map(sp => {
+      const isLive    = sp.tfName === "H1-LIVE";
+      const isMajor   = sp.classif === "MAJOR SPIKE";
+      const cardClass = isMajor ? "major" : isLive ? "live" : "minor";
+      const badgeClass= isMajor ? "badge-major" : "badge-minor";
+      const ratioClass= isMajor ? "major" : "minor";
+      const tfLabel   = isLive  ? "H1 🔴 LIVE" : "H1 ✅ CLOSED";
+      const tfTagClass= isLive  ? "live-tag" : "";
+      const time      = new Date(sp.receivedAt).toLocaleTimeString();
+
+      const newsHtml = sp.news && sp.news.length > 0
+        ? sp.news.slice(0,2).map(n => `
+            <div class="news-item">
+              <div class="news-title">${escHtml(n.title)}</div>
+              <a class="news-link" href="${escHtml(n.url)}" target="_blank" rel="noopener">
+                🔗 ${escHtml(n.url.length > 60 ? n.url.slice(0,60)+"…" : n.url)}
+              </a>
+              <div class="news-source">${escHtml(n.source)}</div>
+            </div>`).join("")
+        : `<div class="no-news">No related news found</div>`;
+
+      return `
+        <div class="spike-card ${cardClass}">
+          <div class="card-header">
+            <div class="card-left">
+              <span class="classif-badge ${badgeClass}">${escHtml(sp.classif)}</span>
+              <span class="symbol">${escHtml(sp.symbol)}</span>
+              <span class="tf-tag ${tfTagClass}">${tfLabel}</span>
+            </div>
+            <span class="ratio ${ratioClass}">${Number(sp.ratio).toFixed(2)}×</span>
+          </div>
+          <div class="card-metrics">
+            <div class="metric">
+              <div class="metric-label">RANGE</div>
+              <div class="metric-value">${escHtml(String(sp.range))}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">ATR(20)</div>
+              <div class="metric-value">${escHtml(String(sp.atr20))}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">GROUP</div>
+              <div class="metric-value">${escHtml(sp.group)}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">TIME</div>
+              <div class="metric-value">${time}</div>
+            </div>
+          </div>
+          <div class="news-section">
+            <div class="news-label">📰 Related News</div>
+            ${newsHtml}
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  // ── Sidebar ─────────────────────────────────────────────────────
+  function renderSidebar() {
+    // Group breakdown
+    const groups  = ["FOREX","METALS","CRYPTO","STOCKS","INDICES","FUTURES"];
+    const counts  = {};
+    groups.forEach(g => counts[g] = 0);
+    allSpikes.forEach(s => { if (counts[s.group] !== undefined) counts[s.group]++; });
+    const maxCount = Math.max(1, ...Object.values(counts));
+
+    document.getElementById("groupBreakdown").innerHTML =
+      groups.map(g => `
+        <div class="group-row">
+          <div class="group-name">${g}</div>
+          <div class="group-bar-wrap">
+            <div class="group-bar" style="width:${(counts[g]/maxCount*100).toFixed(0)}%"></div>
+          </div>
+          <div class="group-count">${counts[g]}</div>
+        </div>`).join("");
+
+    // Latest news ticker
+    const newsItems = [];
+    allSpikes.slice(0, 20).forEach(sp => {
+      (sp.news || []).slice(0,1).forEach(n => {
+        newsItems.push({ sym: sp.symbol, title: n.title, url: n.url, source: n.source });
+      });
+    });
+
+    document.getElementById("newsTicker").innerHTML =
+      newsItems.length === 0
+        ? `<div style="color:var(--muted);font-size:12px;">No news yet</div>`
+        : newsItems.slice(0,10).map(n => `
+            <div class="ticker-item" onclick="window.open('${escHtml(n.url)}','_blank')">
+              <div class="ticker-sym">${escHtml(n.sym)}</div>
+              <div class="ticker-headline">${escHtml(n.title)}</div>
+              <div class="ticker-source">${escHtml(n.source)}</div>
+            </div>`).join("");
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  // Poll every 15 seconds
+  fetchSpikes();
+  setInterval(fetchSpikes, 15000);
+</script>
+</body>
+</html>
