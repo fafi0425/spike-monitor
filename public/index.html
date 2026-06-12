@@ -194,6 +194,35 @@
     background: rgba(245,158,11,.08);
   }
 
+  .action-btn {
+    padding: 3px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: transparent;
+    font-size: 11px;
+    font-family: var(--mono);
+    cursor: pointer;
+    transition: all .15s;
+  }
+
+  .btn-refresh {
+    color: var(--live);
+    border-color: var(--live);
+  }
+
+  .btn-refresh:hover {
+    background: rgba(34,197,94,.08);
+  }
+
+  .btn-clear {
+    color: var(--major);
+    border-color: var(--major);
+  }
+
+  .btn-clear:hover {
+    background: rgba(239,68,68,.08);
+  }
+
   /* ── Spike card ── */
   .spike-card {
     background: var(--bg2);
@@ -498,6 +527,8 @@
         <button class="filter-btn" onclick="setFilter('MAJOR SPIKE')" id="f-MAJOR SPIKE">MAJOR</button>
         <button class="filter-btn" onclick="setFilter('MINOR SPIKE')" id="f-MINOR SPIKE">MINOR</button>
         <button class="filter-btn" onclick="setFilter('LIVE')" id="f-LIVE">LIVE</button>
+        <button class="action-btn btn-refresh" onclick="refreshNow()">↻ Refresh</button>
+        <button class="action-btn btn-clear" onclick="clearSpikes()">✕ Clear</button>
       </div>
     </div>
     <div id="spikeList">
@@ -687,6 +718,25 @@
     return String(str)
       .replace(/&/g,"&amp;").replace(/</g,"&lt;")
       .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  // Manual refresh
+  function refreshNow() {
+    fetchSpikes();
+    document.getElementById("lastUpdate").textContent = "Refreshing...";
+  }
+
+  // Clear all spikes
+  async function clearSpikes() {
+    if (!confirm("Clear all spikes from the dashboard?")) return;
+    try {
+      await fetch("/spikes/clear", { method: "DELETE" });
+      allSpikes = [];
+      render();
+      document.getElementById("lastUpdate").textContent = "Cleared — " + new Date().toLocaleTimeString();
+    } catch(e) {
+      alert("Clear failed: " + e.message);
+    }
   }
 
   // Poll every 15 seconds
