@@ -225,6 +225,7 @@ async function sendSlackAlert(spikes, reportTime, symbolsLoaded) {
   }
 
   const text =
+    `🚧 *[TEST ONLY]*\n` +
     `<!channel>\n` +
     `お疲れ様です。\n` +
     `:rotating_light: *[Spike Checker MT5] Spike Alert*\n\n` +
