@@ -446,6 +446,68 @@
     margin-top: 2px;
   }
 
+  /* ── Toggle buttons ── */
+  .toggle-bar {
+    display: flex;
+    gap: 10px;
+    padding: 12px 28px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+  }
+
+  .toggle-label {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--mono);
+    margin-right: 4px;
+  }
+
+  .toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg3);
+    color: var(--muted);
+    font-size: 12px;
+    font-family: var(--mono);
+    cursor: pointer;
+    transition: all .2s;
+    font-weight: 500;
+  }
+
+  .toggle-btn .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background .2s;
+  }
+
+  .toggle-btn.on {
+    border-color: var(--live);
+    color: var(--live);
+    background: rgba(34,197,94,.08);
+  }
+
+  .toggle-btn.on .dot { background: var(--live); }
+
+  .toggle-btn.off {
+    border-color: var(--major);
+    color: var(--major);
+    background: rgba(239,68,68,.08);
+  }
+
+  .toggle-btn.off .dot { background: var(--major); }
+
+  .toggle-divider {
+    width: 1px; height: 20px;
+    background: var(--border);
+    margin: 0 4px;
+  }
+
   /* ── Empty state ── */
   .empty-state {
     display: flex;
@@ -513,6 +575,23 @@
     <div class="stat-label">Symbols Monitored</div>
     <div class="stat-value" id="statSymbols">151</div>
   </div>
+</div>
+
+<!-- Toggle control bar -->
+<div class="toggle-bar">
+  <span class="toggle-label">SLACK CONTROLS:</span>
+
+  <button class="toggle-btn" id="btnNews" onclick="toggleSetting('newsEnabled')">
+    <span class="dot"></span>
+    <span id="lblNews">Send with News</span>
+  </button>
+
+  <div class="toggle-divider"></div>
+
+  <button class="toggle-btn" id="btnSlack" onclick="toggleSetting('slackEnabled')">
+    <span class="dot"></span>
+    <span id="lblSlack">Slack Alerts ON</span>
+  </button>
 </div>
 
 <div class="layout">
@@ -719,6 +798,52 @@
       .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
 
+  // ── Settings / toggle state ──────────────────────────────────────
+  let currentSettings = { slackEnabled: true, newsEnabled: true };
+
+  async function loadSettings() {
+    try {
+      const res = await fetch("/settings");
+      currentSettings = await res.json();
+      renderToggles();
+    } catch(e) { console.error("Settings load error:", e); }
+  }
+
+  async function toggleSetting(key) {
+    const newVal = !currentSettings[key];
+    try {
+      const res  = await fetch("/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: newVal })
+      });
+      const data = await res.json();
+      currentSettings = data.settings;
+      renderToggles();
+    } catch(e) { alert("Failed to update setting: " + e.message); }
+  }
+
+  function renderToggles() {
+    const s = currentSettings;
+
+    // News toggle
+    const btnNews = document.getElementById("btnNews");
+    const lblNews = document.getElementById("lblNews");
+    btnNews.className = "toggle-btn " + (s.newsEnabled ? "on" : "off");
+    lblNews.textContent = s.newsEnabled ? "Send with News" : "Send without News";
+
+    // Slack toggle
+    const btnSlack = document.getElementById("btnSlack");
+    const lblSlack = document.getElementById("lblSlack");
+    if (!s.slackEnabled) {
+      btnSlack.className = "toggle-btn off";
+      lblSlack.textContent = "Slack Alerts OFF";
+    } else {
+      btnSlack.className = "toggle-btn on";
+      lblSlack.textContent = "Slack Alerts ON";
+    }
+  }
+
   // Manual refresh
   function refreshNow() {
     fetchSpikes();
@@ -739,6 +864,7 @@
   }
 
   // Poll every 15 seconds
+  loadSettings();
   fetchSpikes();
   setInterval(fetchSpikes, 15000);
 </script>

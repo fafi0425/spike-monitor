@@ -7,6 +7,10 @@
     }
   ],
   "routes": [
-    { "src": "/(.*)", "dest": "/server.js" }
+    { "src": "/spike",        "dest": "/server.js" },
+    { "src": "/spikes/clear", "dest": "/server.js" },
+    { "src": "/spikes",       "dest": "/server.js" },
+    { "src": "/settings",     "dest": "/server.js" },
+    { "src": "/(.*)",         "dest": "/server.js" }
   ]
 }
