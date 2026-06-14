@@ -33,7 +33,7 @@ app.use(express.static(path.resolve(__dirname, "public")));
 const PORT          = process.env.PORT         || 3000;
 const SLACK_WEBHOOK = process.env.SLACK_WEBHOOK || "";
 const NEWS_API_KEY  = process.env.NEWS_API_KEY  || "";   // newsapi.org free key
-const AV_API_KEY    = process.env.AV_API_KEY    || "";   // alphavantage.co free key
+const AV_API_KEY    = process.env.AV_API_KEY    || "";   // alphavantage.co (optional, not required)
 
 // Spike storage key in Vercel KV
 const KV_KEY       = "spike_log";
@@ -234,105 +234,121 @@ function classifySymbol(symbol) {
   return { group: "FOREX", base: s.slice(0,3), quote: s.slice(3,6) };
 }
 
-// ─── News fetchers per asset class ───────────────────────────────────────────
+// ─── RSS feed URLs ────────────────────────────────────────────────────────────
+const RSS_FEEDS = {
+  fxstreet:      "https://www.fxstreet.com/rss/news",
+  forexfactory:  "https://nfs.faireconomy.media/ff_calendar_thisweek.xml",
+  coindesk:      "https://www.coindesk.com/arc/outboundfeeds/rss/",
+  cointelegraph: "https://cointelegraph.com/rss",
+  kitco:         "https://www.kitco.com/rss/kitconews.rss",
+  marketwatch:   "https://feeds.marketwatch.com/marketwatch/topstories",
+};
 
-// Forex Factory RSS — free, no key needed
-async function fetchForexNews(currency) {
-  const cacheKey = `ff_${currency}`;
+// ─── Generic RSS fetcher with keyword filtering ───────────────────────────────
+async function fetchRSS(feedUrl, keywords, sourceName) {
+  const cacheKey = `rss_${feedUrl}_${keywords[0]}`;
   if (cache.has(cacheKey)) return cache.get(cacheKey);
 
   try {
-    const feed  = await rss.parseURL("https://nfs.faireconomy.media/ff_calendar_thisweek.xml");
-    const raw   = feed.items
-      .filter(i => i.title && i.title.toUpperCase().includes(currency.toUpperCase()))
-      .map(i => ({ title: i.title, url: i.link || "https://www.forexfactory.com", source: "Forex Factory" }));
-    const items = filterNews(raw, [currency.toLowerCase()]).slice(0, 2);
-
-    // Fallback to NewsAPI if no Forex Factory events
-    if (items.length === 0) {
-      return fetchNewsAPI(currency + " forex central bank", [currency.toLowerCase()]);
-    }
-    cache.set(cacheKey, items);
-    return items;
-  } catch (e) {
-    console.error("ForexFactory RSS error:", e.message);
-    return fetchNewsAPI(currency + " forex", [currency.toLowerCase()]);
-  }
-}
-
-// CoinGecko + NewsAPI — crypto news with relevance filtering
-async function fetchCryptoNews(coinSymbol) {
-  const cacheKey = `cg_${coinSymbol}`;
-  if (cache.has(cacheKey)) return cache.get(cacheKey);
-
-  const sym      = coinSymbol.toUpperCase();
-  const coinName = COIN_NAMES[sym] || (sym + " crypto");
-  const keywords = [sym.toLowerCase(), coinName.toLowerCase().split(" ")[0]];
-
-  // CoinGecko coin id map
-  const coinMap = {
-    BTC:"bitcoin", ETH:"ethereum", ADA:"cardano", XRP:"ripple",
-    SOL:"solana",  BNB:"binancecoin", LTC:"litecoin", DOT:"polkadot",
-    DOGE:"dogecoin", LINK:"chainlink", UNI:"uniswap", XLM:"stellar",
-    BCH:"bitcoin-cash", DSH:"dash", TRX:"tron", XTZ:"tezos",
-    AAV:"aave", BAT:"basic-attention-token",
-    KSM:"kusama", GRT:"the-graph", MAT:"matic-network", AVX:"avalanche-2"
-  };
-
-  const coinId = coinMap[sym] || sym.toLowerCase();
-  try {
-    const res   = await axios.get(
-      `https://api.coingecko.com/api/v3/news?per_page=10`,
-      { timeout: 5000 }
-    );
-    const raw   = (res.data.data || []).map(n => ({
-      title: n.title, url: n.url, source: "CoinGecko"
+    const feed  = await rss.parseURL(feedUrl);
+    const raw   = (feed.items || []).map(i => ({
+      title:  i.title  || "",
+      url:    i.link   || i.url || feedUrl,
+      source: sourceName
     }));
     const items = filterNews(raw, keywords).slice(0, 2);
-    if (items.length > 0) {
-      cache.set(cacheKey, items);
-      return items;
-    }
-    // Fallback to NewsAPI with full coin name
-    return fetchNewsAPI(coinName, keywords);
-  } catch (e) {
-    return fetchNewsAPI(coinName, keywords);
-  }
-}
-
-// Alpha Vantage — stocks news sentiment (free key)
-async function fetchStockNews(ticker) {
-  if (!AV_API_KEY) return fetchNewsAPI(ticker + " stock");
-
-  const cacheKey = `av_${ticker}`;
-  if (cache.has(cacheKey)) return cache.get(cacheKey);
-
-  try {
-    const res  = await axios.get(
-      `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${ticker}&apikey=${AV_API_KEY}&limit=3`,
-      { timeout: 5000 }
-    );
-    const items = (res.data.feed || []).slice(0, 3).map(n => ({
-      title:  n.title,
-      url:    n.url,
-      source: "Alpha Vantage"
-    }));
     cache.set(cacheKey, items);
     return items;
-  } catch (e) {
-    return fetchNewsAPI(ticker + " stock earnings");
+  } catch(e) {
+    console.error(`RSS error (${sourceName}):`, e.message);
+    return [];
   }
 }
 
-// NewsAPI.org — metals, indices, futures + fallback
+// ─── Forex — FXStreet primary, Forex Factory calendar fallback ───────────────
+async function fetchForexNews(currency) {
+  const cacheKey = `forex_${currency}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey);
+
+  const keywords = getSymbolKeywords(currency);
+
+  // Try FXStreet first
+  let items = await fetchRSS(RSS_FEEDS.fxstreet, keywords, "FXStreet");
+
+  // Fallback to Forex Factory calendar events
+  if (items.length === 0) {
+    try {
+      const feed = await rss.parseURL(RSS_FEEDS.forexfactory);
+      const raw  = (feed.items || [])
+        .filter(i => i.title && i.title.toUpperCase().includes(currency.toUpperCase()))
+        .map(i => ({ title: i.title, url: i.link || "https://www.forexfactory.com", source: "Forex Factory" }));
+      items = filterNews(raw, keywords).slice(0, 2);
+    } catch(e) { console.error("Forex Factory fallback error:", e.message); }
+  }
+
+  cache.set(cacheKey, items);
+  return items;
+}
+
+// ─── Crypto — CoinDesk primary, CoinTelegraph fallback ───────────────────────
+async function fetchCryptoNews(coinSymbol) {
+  const cacheKey = `crypto_${coinSymbol}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey);
+
+  const keywords = getSymbolKeywords(coinSymbol);
+
+  // Try CoinDesk first
+  let items = await fetchRSS(RSS_FEEDS.coindesk, keywords, "CoinDesk");
+
+  // Fallback to CoinTelegraph
+  if (items.length === 0) {
+    items = await fetchRSS(RSS_FEEDS.cointelegraph, keywords, "CoinTelegraph");
+  }
+
+  cache.set(cacheKey, items);
+  return items;
+}
+
+// ─── Metals — Kitco primary ───────────────────────────────────────────────────
+async function fetchMetalsNews(symbol) {
+  const cacheKey = `metals_${symbol}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey);
+
+  const keywords = getSymbolKeywords(symbol);
+
+  // Kitco — specialist gold/silver/platinum/palladium news
+  let items = await fetchRSS(RSS_FEEDS.kitco, keywords, "Kitco");
+
+  // Fallback to MarketWatch
+  if (items.length === 0) {
+    items = await fetchRSS(RSS_FEEDS.marketwatch, keywords, "MarketWatch");
+  }
+
+  cache.set(cacheKey, items);
+  return items;
+}
+
+// ─── Stocks, Indices, Futures — MarketWatch ───────────────────────────────────
+async function fetchMarketNews(symbol) {
+  const cacheKey = `market_${symbol}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey);
+
+  const keywords = getSymbolKeywords(symbol);
+  const items    = await fetchRSS(RSS_FEEDS.marketwatch, keywords, "MarketWatch");
+
+  cache.set(cacheKey, items);
+  return items;
+}
+
+// ─── NewsAPI fallback (only if RSS returns nothing) ───────────────────────────
 async function fetchNewsAPI(query, keywords = null) {
-  if (!NEWS_API_KEY) return [{ title: "Configure NEWS_API_KEY in .env for news", url: "#", source: "" }];
+  if (!NEWS_API_KEY) return [];
 
   const cacheKey = `napi_${query}`;
   if (cache.has(cacheKey)) return cache.get(cacheKey);
 
   try {
-    const res  = await axios.get("https://newsapi.org/v2/everything", {
+    const res   = await axios.get("https://newsapi.org/v2/everything", {
       params: { q: query, sortBy: "publishedAt", pageSize: 10, language: "en", apiKey: NEWS_API_KEY },
       timeout: 5000
     });
@@ -341,18 +357,32 @@ async function fetchNewsAPI(query, keywords = null) {
       url:    a.url,
       source: a.source?.name || "NewsAPI"
     }));
-    // Filter by keywords if provided, otherwise just block bad domains
     const filterKw = keywords || [query.toLowerCase().split(" ")[0]];
     const items    = filterNews(raw, filterKw).slice(0, 2);
-    cache.set(cacheKey, items.length > 0 ? items : []);
+    cache.set(cacheKey, items);
     return items;
-  } catch (e) {
+  } catch(e) {
     console.error("NewsAPI error:", e.message);
     return [];
   }
 }
 
 // ─── Unified news dispatcher ──────────────────────────────────────────────────
+async function fetchNews(symbol) {
+  const { group, base } = classifySymbol(symbol);
+
+  switch (group) {
+    case "FOREX":   return fetchForexNews(base);
+    case "CRYPTO":  return fetchCryptoNews(base);
+    case "METALS":  return fetchMetalsNews(base);
+    case "STOCKS":  return fetchMarketNews(base);
+    case "INDICES": return fetchMarketNews(base);
+    case "FUTURES": return fetchMarketNews(base);
+    default:        return fetchMarketNews(base);
+  }
+}
+
+
 async function fetchNews(symbol) {
   const { group, base } = classifySymbol(symbol);
   const keywords = getSymbolKeywords(symbol);
