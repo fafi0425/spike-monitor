@@ -185,8 +185,9 @@ function getSymbolKeywords(symbol) {
   return [s];
 }
 
-// ─── Strict news filter — blocks gambling + requires symbol relevance ─────────
-function filterNews(items, keywords) {
+// ─── News filter — blocks gambling/spam only, no keyword relevance required ───
+// RSS sources are already asset-class specific so results are inherently relevant
+function filterNews(items) {
   return items.filter(item => {
     if (!item || !item.title || !item.url) return false;
     const url   = (item.url   || "").toLowerCase();
@@ -197,13 +198,7 @@ function filterNews(items, keywords) {
     const isBlocked = BLOCKED_KEYWORDS.some(bk =>
       combined.includes(bk.toLowerCase())
     );
-    if (isBlocked) return false;
-
-    // Relevance check — title MUST contain at least one symbol keyword
-    const isRelevant = keywords.some(kw =>
-      title.includes(kw.toLowerCase())
-    );
-    return isRelevant;
+    return !isBlocked;
   });
 }
 
@@ -256,7 +251,7 @@ async function fetchRSS(feedUrl, keywords, sourceName) {
       url:    i.link   || i.url || feedUrl,
       source: sourceName
     }));
-    const items = filterNews(raw, keywords).slice(0, 2);
+    const items = filterNews(raw).slice(0, 2);
     cache.set(cacheKey, items);
     return items;
   } catch(e) {
@@ -282,7 +277,7 @@ async function fetchForexNews(currency) {
       const raw  = (feed.items || [])
         .filter(i => i.title && i.title.toUpperCase().includes(currency.toUpperCase()))
         .map(i => ({ title: i.title, url: i.link || "https://www.forexfactory.com", source: "Forex Factory" }));
-      items = filterNews(raw, keywords).slice(0, 2);
+      items = filterNews(raw).slice(0, 2);
     } catch(e) { console.error("Forex Factory fallback error:", e.message); }
   }
 
@@ -358,7 +353,7 @@ async function fetchNewsAPI(query, keywords = null) {
       source: a.source?.name || "NewsAPI"
     }));
     const filterKw = keywords || [query.toLowerCase().split(" ")[0]];
-    const items    = filterNews(raw, filterKw).slice(0, 2);
+    const items    = filterNews(raw).slice(0, 2);
     cache.set(cacheKey, items);
     return items;
   } catch(e) {
@@ -428,6 +423,7 @@ async function sendSlackAlert(spikes, reportTime, symbolsLoaded, settings) {
 
   const text =
     `🚧 *[TEST ONLY]*\n` +
+    `<!channel>\n` +
     `お疲れ様です。\n` +
     `:rotating_light: *[Spike Checker MT5] Spike Alert*\n\n` +
     `Report generated : ${reportTime} (MT5 Server Time)\n` +
