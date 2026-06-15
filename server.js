@@ -79,6 +79,26 @@ async function saveSettings(settings) {
   }
 }
 
+// ─── Trusted financial news domains — ONLY these sources are allowed ────────
+const TRUSTED_DOMAINS = [
+  "fxstreet.com","forexfactory.com","dailyfx.com","forex.com",
+  "coindesk.com","cointelegraph.com","decrypt.co","theblock.co",
+  "kitco.com","mining.com","metalsbulletin.com",
+  "marketwatch.com","wsj.com","reuters.com","bloomberg.com",
+  "ft.com","cnbc.com","investing.com","benzinga.com",
+  "seekingalpha.com","finance.yahoo.com","barrons.com",
+  "thestreet.com","zerohedge.com","financialpost.com",
+  "oilprice.com","naturalgasintel.com","ngas.news",
+  "nikkei.com","scmp.com","businesstimes.com.sg"
+];
+
+// ─── Blocked URL paths — non-financial sections of news sites ────────────────
+const BLOCKED_PATHS = [
+  "tvshowbiz","showbiz","entertainment","celebrity","music",
+  "sports","sport","lifestyle","travel","food","health",
+  "fashion","beauty","horoscope","astrology","games","dating"
+];
+
 // ─── Blocked keywords — gambling, spam, adult, unrelated content ─────────────
 const BLOCKED_KEYWORDS = [
   // Gambling
@@ -185,20 +205,30 @@ function getSymbolKeywords(symbol) {
   return [s];
 }
 
-// ─── News filter — blocks gambling/spam only, no keyword relevance required ───
-// RSS sources are already asset-class specific so results are inherently relevant
+// ─── News filter — 3-layer check ────────────────────────────────────────────
+// 1. Must be from a trusted financial domain
+// 2. Must not be from a non-financial URL path (showbiz, sports, etc.)
+// 3. Must not contain gambling/spam keywords
 function filterNews(items) {
   return items.filter(item => {
     if (!item || !item.title || !item.url) return false;
-    const url   = (item.url   || "").toLowerCase();
-    const title = (item.title || "").toLowerCase();
+    const url      = (item.url   || "").toLowerCase();
+    const title    = (item.title || "").toLowerCase();
     const combined = title + " " + url;
 
-    // Hard block — any gambling/spam keyword found → reject immediately
-    const isBlocked = BLOCKED_KEYWORDS.some(bk =>
+    // Layer 1 — must come from a trusted financial domain
+    const isTrusted = TRUSTED_DOMAINS.some(d => url.includes(d));
+    if (!isTrusted) return false;
+
+    // Layer 2 — block non-financial URL paths (tvshowbiz, sports, etc.)
+    const hasBlockedPath = BLOCKED_PATHS.some(p => url.includes("/" + p));
+    if (hasBlockedPath) return false;
+
+    // Layer 3 — block gambling/spam keywords in title or url
+    const hasBlockedKw = BLOCKED_KEYWORDS.some(bk =>
       combined.includes(bk.toLowerCase())
     );
-    return !isBlocked;
+    return !hasBlockedKw;
   });
 }
 
