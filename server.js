@@ -196,14 +196,17 @@ const SYMBOL_KEYWORDS = {
 
 // ─── Get keywords for a symbol ────────────────────────────────────────────────
 function getSymbolKeywords(symbol) {
-  const s = symbol.replace(".std","").toUpperCase();
-  // Direct match
-  if (SYMBOL_KEYWORDS[s]) return SYMBOL_KEYWORDS[s];
-  // Try base currency (first 3 chars for forex)
+  const s    = symbol.replace(".std","").toUpperCase();
   const base = s.slice(0,3);
-  if (SYMBOL_KEYWORDS[base]) return SYMBOL_KEYWORDS[base];
-  // Fallback
-  return [s];
+  const quote = s.slice(3,6);
+
+  // Direct match (stocks, indices, futures)
+  if (SYMBOL_KEYWORDS[s]) return SYMBOL_KEYWORDS[s];
+
+  // Forex pair — combine keywords for BOTH base AND quote currencies
+  const baseKw  = SYMBOL_KEYWORDS[base]  || [base];
+  const quoteKw = SYMBOL_KEYWORDS[quote] || [quote];
+  return [...new Set([...baseKw, ...quoteKw])];
 }
 
 // ─── News filter — 3-layer check ────────────────────────────────────────────
@@ -275,6 +278,15 @@ const RSS_FEEDS = {
   investing_crypto:"https://www.investing.com/rss/news_301.rss",
 };
 
+// ─── Strict relevance filter — used for broad/general RSS sources ──────────────
+// Requires at least one keyword to appear in the article TITLE
+function filterNewsByKeywords(items, keywords) {
+  return filterNews(items).filter(item => {
+    const title = (item.title || "").toLowerCase();
+    return keywords.some(kw => title.includes(kw.toLowerCase()));
+  });
+}
+
 // ─── Generic RSS fetcher with keyword filtering ───────────────────────────────
 async function fetchRSS(feedUrl, keywords, sourceName) {
   const cacheKey = `rss_${feedUrl}_${keywords[0]}`;
@@ -297,11 +309,12 @@ async function fetchRSS(feedUrl, keywords, sourceName) {
 }
 
 // ─── Forex — FXStreet primary, Forex Factory calendar fallback ───────────────
-async function fetchForexNews(currency) {
-  const cacheKey = `forex_${currency}`;
+async function fetchForexNews(currency, pairSymbol) {
+  const cacheKey = `forex_${pairSymbol || currency}`;
   if (cache.has(cacheKey)) return cache.get(cacheKey);
 
-  const keywords = getSymbolKeywords(currency);
+  // Get keywords for BOTH currencies in the pair
+  const keywords = getSymbolKeywords(pairSymbol || currency);
 
   // Try FXStreet first
   let items = await fetchRSS(RSS_FEEDS.fxstreet, keywords, "FXStreet");
@@ -317,12 +330,19 @@ async function fetchForexNews(currency) {
     } catch(e) { console.error("Forex Factory fallback error:", e.message); }
   }
 
-  // Fallback 2 — Investing.com forex news
+  // Fallback 2 — Investing.com forex news (strict keyword filter for broad source)
   if (items.length === 0) {
-    items = await fetchRSS(RSS_FEEDS.investing_fx, keywords, "Investing.com");
+    const raw = await fetchRSS(RSS_FEEDS.investing_fx, keywords, "Investing.com");
+    items = filterNewsByKeywords(raw, keywords);
   }
 
-  // Fallback 3 — Forex Factory calendar events for this currency
+  // Fallback 3 — Investing.com general news with strict filter
+  if (items.length === 0) {
+    const raw = await fetchRSS(RSS_FEEDS.investing_news, keywords, "Investing.com");
+    items = filterNewsByKeywords(raw, keywords);
+  }
+
+  // Fallback 4 — Forex Factory calendar events for this currency
   if (items.length === 0) {
     items = await fetchCalendarEvents(currency);
   }
@@ -414,14 +434,16 @@ async function fetchMarketNews(symbol) {
   // Primary — MarketWatch
   let items = await fetchRSS(RSS_FEEDS.marketwatch, keywords, "MarketWatch");
 
-  // Fallback 1 — Investing.com stocks/general news
+  // Fallback 1 — Investing.com stocks news (strict keyword filter)
   if (items.length === 0) {
-    items = await fetchRSS(RSS_FEEDS.investing_stock, keywords, "Investing.com");
+    const raw = await fetchRSS(RSS_FEEDS.investing_stock, keywords, "Investing.com");
+    items = filterNewsByKeywords(raw, keywords);
   }
 
-  // Fallback 2 — Investing.com general news
+  // Fallback 2 — Investing.com general news (strict keyword filter)
   if (items.length === 0) {
-    items = await fetchRSS(RSS_FEEDS.investing_news, keywords, "Investing.com");
+    const raw = await fetchRSS(RSS_FEEDS.investing_news, keywords, "Investing.com");
+    items = filterNewsByKeywords(raw, keywords);
   }
 
   // Fallback 3 — For indices, check Forex Factory calendar for related currency events
@@ -470,7 +492,7 @@ async function fetchNews(symbol) {
   const { group, base } = classifySymbol(symbol);
 
   switch (group) {
-    case "FOREX":   return fetchForexNews(base);
+    case "FOREX":   return fetchForexNews(base, symbol.replace(".std","").toUpperCase());
     case "CRYPTO":  return fetchCryptoNews(base);
     case "METALS":  return fetchMetalsNews(base);
     case "STOCKS":  return fetchMarketNews(base);
@@ -487,7 +509,7 @@ async function fetchNews(symbol) {
   const query    = keywords[0]; // primary search term
 
   switch (group) {
-    case "FOREX":   return fetchForexNews(base);
+    case "FOREX":   return fetchForexNews(base, symbol.replace(".std","").toUpperCase());
     case "CRYPTO":  return fetchCryptoNews(base);
     case "STOCKS":  return fetchStockNews(base);
     case "METALS":  return fetchNewsAPI(query, keywords);
