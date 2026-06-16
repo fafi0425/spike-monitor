@@ -89,7 +89,8 @@ const TRUSTED_DOMAINS = [
   "seekingalpha.com","finance.yahoo.com","barrons.com",
   "thestreet.com","zerohedge.com","financialpost.com",
   "oilprice.com","naturalgasintel.com","ngas.news",
-  "nikkei.com","scmp.com","businesstimes.com.sg"
+  "nikkei.com","scmp.com","businesstimes.com.sg",
+  "investing.com","ph.investing.com"
 ];
 
 // ─── Blocked URL paths — non-financial sections of news sites ────────────────
@@ -267,6 +268,11 @@ const RSS_FEEDS = {
   cointelegraph: "https://cointelegraph.com/rss",
   kitco:         "https://www.kitco.com/rss/kitconews.rss",
   marketwatch:   "https://feeds.marketwatch.com/marketwatch/topstories",
+  investing_news:"https://www.investing.com/rss/news.rss",
+  investing_fx:  "https://www.investing.com/rss/news_14.rss",
+  investing_comm:"https://www.investing.com/rss/news_4.rss",
+  investing_stock:"https://www.investing.com/rss/news_25.rss",
+  investing_crypto:"https://www.investing.com/rss/news_301.rss",
 };
 
 // ─── Generic RSS fetcher with keyword filtering ───────────────────────────────
@@ -300,7 +306,7 @@ async function fetchForexNews(currency) {
   // Try FXStreet first
   let items = await fetchRSS(RSS_FEEDS.fxstreet, keywords, "FXStreet");
 
-  // Fallback to Forex Factory calendar events
+  // Fallback 1 — Forex Factory calendar events
   if (items.length === 0) {
     try {
       const feed = await rss.parseURL(RSS_FEEDS.forexfactory);
@@ -311,8 +317,42 @@ async function fetchForexNews(currency) {
     } catch(e) { console.error("Forex Factory fallback error:", e.message); }
   }
 
+  // Fallback 2 — Investing.com forex news
+  if (items.length === 0) {
+    items = await fetchRSS(RSS_FEEDS.investing_fx, keywords, "Investing.com");
+  }
+
+  // Fallback 3 — Forex Factory calendar events for this currency
+  if (items.length === 0) {
+    items = await fetchCalendarEvents(currency);
+  }
+
   cache.set(cacheKey, items);
   return items;
+}
+
+// ─── Economic calendar events from Forex Factory ────────────────────────────────
+// Used when no news article found — shows scheduled events as context
+async function fetchCalendarEvents(currency) {
+  const cacheKey = `cal_${currency}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey);
+
+  try {
+    const feed  = await rss.parseURL(RSS_FEEDS.forexfactory);
+    const items = (feed.items || [])
+      .filter(i => i.title && i.title.toUpperCase().includes(currency.toUpperCase()))
+      .slice(0, 2)
+      .map(i => ({
+        title:  "📅 [Economic Calendar] " + i.title,
+        url:    i.link || "https://www.forexfactory.com/calendar",
+        source: "Forex Factory Calendar"
+      }));
+    cache.set(cacheKey, items);
+    return items;
+  } catch(e) {
+    console.error("Calendar fetch error:", e.message);
+    return [];
+  }
 }
 
 // ─── Crypto — CoinDesk primary, CoinTelegraph fallback ───────────────────────
@@ -325,9 +365,14 @@ async function fetchCryptoNews(coinSymbol) {
   // Try CoinDesk first
   let items = await fetchRSS(RSS_FEEDS.coindesk, keywords, "CoinDesk");
 
-  // Fallback to CoinTelegraph
+  // Fallback 1 — CoinTelegraph
   if (items.length === 0) {
     items = await fetchRSS(RSS_FEEDS.cointelegraph, keywords, "CoinTelegraph");
+  }
+
+  // Fallback 2 — Investing.com crypto
+  if (items.length === 0) {
+    items = await fetchRSS(RSS_FEEDS.investing_crypto, keywords, "Investing.com");
   }
 
   cache.set(cacheKey, items);
@@ -344,9 +389,14 @@ async function fetchMetalsNews(symbol) {
   // Kitco — specialist gold/silver/platinum/palladium news
   let items = await fetchRSS(RSS_FEEDS.kitco, keywords, "Kitco");
 
-  // Fallback to MarketWatch
+  // Fallback 1 — MarketWatch
   if (items.length === 0) {
     items = await fetchRSS(RSS_FEEDS.marketwatch, keywords, "MarketWatch");
+  }
+
+  // Fallback 2 — Investing.com commodities
+  if (items.length === 0) {
+    items = await fetchRSS(RSS_FEEDS.investing_comm, keywords, "Investing.com");
   }
 
   cache.set(cacheKey, items);
@@ -358,8 +408,31 @@ async function fetchMarketNews(symbol) {
   const cacheKey = `market_${symbol}`;
   if (cache.has(cacheKey)) return cache.get(cacheKey);
 
+  const sym      = symbol.replace(".std","").toUpperCase();
   const keywords = getSymbolKeywords(symbol);
-  const items    = await fetchRSS(RSS_FEEDS.marketwatch, keywords, "MarketWatch");
+
+  // Primary — MarketWatch
+  let items = await fetchRSS(RSS_FEEDS.marketwatch, keywords, "MarketWatch");
+
+  // Fallback 1 — Investing.com stocks/general news
+  if (items.length === 0) {
+    items = await fetchRSS(RSS_FEEDS.investing_stock, keywords, "Investing.com");
+  }
+
+  // Fallback 2 — Investing.com general news
+  if (items.length === 0) {
+    items = await fetchRSS(RSS_FEEDS.investing_news, keywords, "Investing.com");
+  }
+
+  // Fallback 3 — For indices, check Forex Factory calendar for related currency events
+  // e.g. JP225 spike → check for JPY/BOJ calendar events
+  if (items.length === 0 && INDEX_CURRENCY[sym]) {
+    const relatedCurrency = INDEX_CURRENCY[sym];
+    items = await fetchCalendarEvents(relatedCurrency);
+    if (items.length > 0 && process.env.NODE_ENV !== 'production') {
+      console.log(`[${sym}] No news found — showing ${relatedCurrency} calendar events instead`);
+    }
+  }
 
   cache.set(cacheKey, items);
   return items;
