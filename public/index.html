@@ -157,11 +157,17 @@
     gap: 12px;
   }
 
-  .feed-header {
+  .feed-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .feed-controls-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 4px;
   }
 
   .feed-title {
@@ -174,6 +180,26 @@
   .filter-row {
     display: flex;
     gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .filter-row-label {
+    font-size: 10px;
+    color: var(--muted);
+    font-family: var(--mono);
+    align-self: center;
+    white-space: nowrap;
+    margin-right: 2px;
+  }
+
+  .group-btn {
+    border-color: #2a3040 !important;
+  }
+
+  .group-btn.active {
+    border-color: var(--accent) !important;
+    color: var(--accent) !important;
+    background: rgba(245,158,11,.08) !important;
   }
 
   .filter-btn {
@@ -598,15 +624,29 @@
 
   <!-- Feed -->
   <div class="feed">
-    <div class="feed-header">
-      <div class="feed-title">Spike Feed</div>
+    <div class="feed-controls">
+      <!-- Row 1: title + type filters + action buttons -->
+      <div class="feed-controls-top">
+        <div class="feed-title">Spike Feed</div>
+        <div class="filter-row">
+          <button class="filter-btn active" onclick="setFilter('ALL')" id="f-ALL">ALL</button>
+          <button class="filter-btn" onclick="setFilter('MAJOR SPIKE')" id="f-MAJOR SPIKE">MAJOR</button>
+          <button class="filter-btn" onclick="setFilter('MINOR SPIKE')" id="f-MINOR SPIKE">MINOR</button>
+          <button class="filter-btn" onclick="setFilter('LIVE')" id="f-LIVE">LIVE</button>
+          <button class="action-btn btn-refresh" onclick="refreshNow()">↻ Refresh</button>
+          <button class="action-btn btn-clear" onclick="clearSpikes()">✕ Clear</button>
+        </div>
+      </div>
+      <!-- Row 2: group filters -->
       <div class="filter-row">
-        <button class="filter-btn active" onclick="setFilter('ALL')" id="f-ALL">ALL</button>
-        <button class="filter-btn" onclick="setFilter('MAJOR SPIKE')" id="f-MAJOR SPIKE">MAJOR</button>
-        <button class="filter-btn" onclick="setFilter('MINOR SPIKE')" id="f-MINOR SPIKE">MINOR</button>
-        <button class="filter-btn" onclick="setFilter('LIVE')" id="f-LIVE">LIVE</button>
-        <button class="action-btn btn-refresh" onclick="refreshNow()">↻ Refresh</button>
-        <button class="action-btn btn-clear" onclick="clearSpikes()">✕ Clear</button>
+        <span class="filter-row-label">GROUP:</span>
+        <button class="filter-btn group-btn active" onclick="setGroup('ALL')" id="g-ALL">ALL</button>
+        <button class="filter-btn group-btn" onclick="setGroup('FOREX')" id="g-FOREX">FOREX</button>
+        <button class="filter-btn group-btn" onclick="setGroup('METALS')" id="g-METALS">METALS</button>
+        <button class="filter-btn group-btn" onclick="setGroup('CRYPTO')" id="g-CRYPTO">CRYPTO</button>
+        <button class="filter-btn group-btn" onclick="setGroup('STOCKS')" id="g-STOCKS">STOCKS</button>
+        <button class="filter-btn group-btn" onclick="setGroup('INDICES')" id="g-INDICES">INDICES</button>
+        <button class="filter-btn group-btn" onclick="setGroup('FUTURES')" id="g-FUTURES">FUTURES</button>
       </div>
     </div>
     <div id="spikeList">
@@ -636,8 +676,9 @@
 </div>
 
 <script>
-  let allSpikes  = [];
+  let allSpikes   = [];
   let activeFilter = "ALL";
+  let activeGroup  = "ALL";
 
   // ── Fetch & render ──────────────────────────────────────────────
   async function fetchSpikes() {
@@ -655,16 +696,29 @@
 
   function setFilter(f) {
     activeFilter = f;
-    document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".filter-btn:not(.group-btn)").forEach(b => b.classList.remove("active"));
     document.getElementById("f-" + f)?.classList.add("active");
     render();
   }
 
+  function setGroup(g) {
+    activeGroup = g;
+    document.querySelectorAll(".group-btn").forEach(b => b.classList.remove("active"));
+    document.getElementById("g-" + g)?.classList.add("active");
+    render();
+  }
+
   function render() {
-    const filtered = activeFilter === "ALL" ? allSpikes
+    // Apply classification filter
+    let filtered = activeFilter === "ALL" ? allSpikes
       : activeFilter === "LIVE"
         ? allSpikes.filter(s => s.tfName === "H1-LIVE")
         : allSpikes.filter(s => s.classif === activeFilter);
+
+    // Apply group filter on top
+    if (activeGroup !== "ALL") {
+      filtered = filtered.filter(s => s.group === activeGroup);
+    }
 
     renderStats();
     renderFeed(filtered);
