@@ -357,18 +357,27 @@ async function fetchCalendarEvents(currency) {
   const cacheKey = `cal_${currency}`;
   if (cache.has(cacheKey)) return cache.get(cacheKey);
 
+  // Use ALL keywords for the currency, not just the 3-letter code
+  // e.g. JPY → ["JPY","Japanese yen","Japan","BOJ","Bank of Japan"]
+  // so "BOJ Deputy Gov Himino..." and "BOJ Minutes..." are both caught
+  const keywords = SYMBOL_KEYWORDS[currency] || [currency];
+
   try {
     const feed  = await rss.parseURL(RSS_FEEDS.forexfactory);
-    const items = (feed.items || [])
-      .filter(i => i.title && i.title.toUpperCase().includes(currency.toUpperCase()))
+    const raw   = (feed.items || [])
+      .filter(i => {
+        if (!i.title) return false;
+        const title = i.title.toUpperCase();
+        return keywords.some(kw => title.includes(kw.toUpperCase()));
+      })
       .slice(0, 2)
       .map(i => ({
         title:  "📅 [Economic Calendar] " + i.title,
         url:    i.link || "https://www.forexfactory.com/calendar",
         source: "Forex Factory Calendar"
       }));
-    cache.set(cacheKey, items);
-    return items;
+    cache.set(cacheKey, raw);
+    return raw;
   } catch(e) {
     console.error("Calendar fetch error:", e.message);
     return [];
@@ -446,14 +455,23 @@ async function fetchMarketNews(symbol) {
     items = filterNewsByKeywords(raw, keywords);
   }
 
-  // Fallback 3 — For indices, check Forex Factory calendar for related currency events
-  // e.g. JP225 spike → check for JPY/BOJ calendar events
+  // Fallback 3 — For indices, try FXStreet using the related currency keywords
+  // e.g. JP225 → search FXStreet for JPY/BOJ/Japan/Bank of Japan
+  if (items.length === 0 && INDEX_CURRENCY[sym]) {
+    const relatedCurrency = INDEX_CURRENCY[sym];
+    const currencyKeywords = SYMBOL_KEYWORDS[relatedCurrency] || [relatedCurrency];
+    items = await fetchRSS(RSS_FEEDS.fxstreet, currencyKeywords, "FXStreet");
+    if (items.length > 0)
+      console.log(`[${sym}] Found ${items.length} news via FXStreet (${relatedCurrency} keywords)`);
+  }
+
+  // Fallback 4 — Forex Factory calendar using full keyword set
+  // Catches BOJ headlines, Fed statements, ECB decisions etc.
   if (items.length === 0 && INDEX_CURRENCY[sym]) {
     const relatedCurrency = INDEX_CURRENCY[sym];
     items = await fetchCalendarEvents(relatedCurrency);
-    if (items.length > 0 && process.env.NODE_ENV !== 'production') {
-      console.log(`[${sym}] No news found — showing ${relatedCurrency} calendar events instead`);
-    }
+    if (items.length > 0)
+      console.log(`[${sym}] Showing ${relatedCurrency} calendar events — no news articles found`);
   }
 
   cache.set(cacheKey, items);
