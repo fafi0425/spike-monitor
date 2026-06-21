@@ -289,6 +289,10 @@ function filterNews(items) {
   });
 }
 
+// ─── Priority symbols — these trigger @channel mention in Slack ─────────────
+// All other spikes are sent to Slack without the @channel mention
+const PRIORITY_SYMBOLS = ["XAUUSD","USDJPY","EURUSD","GBPUSD","GBPJPY"];
+
 // ─── Asset class router ───────────────────────────────────────────────────────
 // Given a symbol, return which group it belongs to and extract the base currency
 function classifySymbol(symbol) {
@@ -617,9 +621,18 @@ async function sendSlackAlert(spikes, reportTime, symbolsLoaded, settings) {
     detailLines += "\n";
   }
 
+  // Check if any spiking symbol is in the priority watchlist
+  // Priority symbols → @channel mention
+  // All other symbols → no mention (silent alert)
+  const hasPriority = spikes.some(sp => {
+    const sym = sp.symbol.replace(".std","").toUpperCase();
+    return PRIORITY_SYMBOLS.includes(sym);
+  });
+  const mention = hasPriority ? "<!channel>\n" : "";
+
   const text =
     `🚧 *[TEST ONLY]*\n` +
-    `<!channel>\n` +
+    mention +
     `お疲れ様です。\n` +
     `:rotating_light: *[Spike Checker MT5] Spike Alert*\n\n` +
     `Report generated : ${reportTime} (MT5 Server Time)\n` +
