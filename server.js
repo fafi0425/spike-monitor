@@ -599,22 +599,22 @@ async function sendM5Alert(spikes, reportTime, symbolsLoaded, stage, settings) {
   if (!SLACK_WEBHOOK || !settings.slackEnabled) return;
 
   const isEscalation = stage === "M5_ESCALATION";
-  const symbols = spikes.map(sp => sp.symbol).join(", ");
+  const symbols = spikes.map(sp => sp.symbol.replace(".std","")).join(", ");
   const mention = isEscalation ? "<!channel>\n" : "";
 
   let lines = "";
   spikes.forEach(sp => {
-    lines += `\n• *${sp.symbol}* [M5 LIVE]  *${sp.classif}*  ${sp.ratio}x ATR`;
+    lines += `\n• *${sp.symbol.replace(".std","")}* [M5 LIVE]  *${sp.classif}*  ${sp.ratio}x ATR`;
     lines += `\n  Range: ${sp.range}  |  ATR14: ${sp.atr20}  |  @ ${sp.candleTime}`;
     lines += "\n";
   });
 
   const header = isEscalation
-    ? ":rotating_light: *[Spike Checker MT5] M5 ESCALATION — Notify Desk*"
+    ? ":rotating_light: *[Spike Checker MT5] M5 ESCALATION*"
     : ":warning: *[Spike Checker MT5] M5 Early Warning — Monitor Screen*";
 
   const action = isEscalation
-    ? ":mega: *Action:* Notify desk immediately. Check open positions on " + symbols + ". Consider widening spreads."
+    ? ":mega: *Action:* Check open positions on " + symbols + ". Consider widening spreads if applicable."
     : ":eyes: *Action:* Monitor screen closely. Check economic calendar for upcoming events.";
 
   const text =
@@ -650,7 +650,8 @@ async function sendSlackAlert(spikes, reportTime, symbolsLoaded, settings) {
   for (const sp of spikes) {
     const news   = sp.news || [];
     const tag    = sp.tfName === "H1-LIVE" ? "H1 🔴LIVE" : "H1 ✅CLOSED";
-    detailLines += `\n• *${sp.symbol}* [${tag}]  *${sp.classif}*  ${sp.ratio}x ATR`;
+    const symClean = sp.symbol.replace(".std","");
+    detailLines += `\n• *${symClean}* [${tag}]  *${sp.classif}*  ${sp.ratio}x ATR`;
     detailLines += `\n  Range: ${sp.range}  |  ATR20: ${sp.atr20}  |  @ ${sp.candleTime}`;
     if (settings.newsEnabled && news.length > 0 && news[0].title && news[0].url && news[0].url !== "#") {
       detailLines += `\n  📰 ${news[0].title}`;
