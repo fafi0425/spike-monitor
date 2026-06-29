@@ -595,6 +595,46 @@ async function fetchNews(symbol) {
 }
 
 // ─── Slack message builder ────────────────────────────────────────────────────
+async function sendM5Alert(spikes, reportTime, symbolsLoaded, stage, settings) {
+  if (!SLACK_WEBHOOK || !settings.slackEnabled) return;
+
+  const isEscalation = stage === "M5_ESCALATION";
+  const symbols = spikes.map(sp => sp.symbol).join(", ");
+  const mention = isEscalation ? "<!channel>\n" : "";
+
+  let lines = "";
+  spikes.forEach(sp => {
+    lines += `\n• *${sp.symbol}* [M5 LIVE]  *${sp.classif}*  ${sp.ratio}x ATR`;
+    lines += `\n  Range: ${sp.range}  |  ATR14: ${sp.atr20}  |  @ ${sp.candleTime}`;
+    lines += "\n";
+  });
+
+  const header = isEscalation
+    ? ":rotating_light: *[Spike Checker MT5] M5 ESCALATION — Notify Desk*"
+    : ":warning: *[Spike Checker MT5] M5 Early Warning — Monitor Screen*";
+
+  const action = isEscalation
+    ? ":mega: *Action:* Notify desk immediately. Check open positions on " + symbols + ". Consider widening spreads."
+    : ":eyes: *Action:* Monitor screen closely. Check economic calendar for upcoming events.";
+
+  const text =
+    "🚧 *[TEST ONLY]*\n" +
+    mention +
+    "お疲れ様です。\n" +
+    header + "\n\n" +
+    "Report generated : " + reportTime + " (MT5 Server Time)\n" +
+    "Symbols loaded   : " + symbolsLoaded + "\n\n" +
+    action + "\n" +
+    "\n*Developing Spikes (M5):*" + lines;
+
+  try {
+    await axios.post(SLACK_WEBHOOK, { text }, { timeout: 5000 });
+    console.log("M5 " + stage + " Slack sent | " + symbols);
+  } catch(e) {
+    console.error("Slack M5 error:", e.message);
+  }
+}
+
 async function sendSlackAlert(spikes, reportTime, symbolsLoaded, settings) {
   if (!SLACK_WEBHOOK) { console.warn("No SLACK_WEBHOOK set — skipping Slack"); return; }
   if (!settings.slackEnabled) { console.log("Slack alerts paused by dashboard toggle."); return; }
@@ -665,12 +705,13 @@ app.post("/spike", async (req, res) => {
     return res.status(400).json({ error: "No spikes in payload" });
   }
 
-  console.log(`[${new Date().toISOString()}] Received ${spikes.length} spike(s) from MT5`);
+  const stage = req.body.stage || "H1";
+  console.log(`[${new Date().toISOString()}] Stage: ${stage} | ${spikes.length} spike(s) from MT5`);
 
-  // Fetch news for each spike in parallel
+  // Fetch news only for H1 alerts (M5 warnings dont need news)
   const enriched = await Promise.all(
     spikes.map(async sp => {
-      const news = await fetchNews(sp.symbol);
+      const news = stage === "H1" ? await fetchNews(sp.symbol) : [];
       return { ...sp, news };
     })
   );
@@ -678,15 +719,19 @@ app.post("/spike", async (req, res) => {
   // Save to Vercel KV
   const currentLog = await getSpikeLog();
   enriched.forEach(sp => {
-    currentLog.unshift({ ...sp, receivedAt: new Date().toISOString() });
+    currentLog.unshift({ ...sp, stage, receivedAt: new Date().toISOString() });
   });
   await saveSpikeLog(currentLog);
 
-  // Send consolidated Slack alert
+  // Route to stage-specific Slack alert
   const settings = await getSettings();
-  await sendSlackAlert(enriched, reportTime, symbolsLoaded, settings);
+  if (stage === "M5_WARNING" || stage === "M5_ESCALATION") {
+    await sendM5Alert(enriched, reportTime, symbolsLoaded, stage, settings);
+  } else {
+    await sendSlackAlert(enriched, reportTime, symbolsLoaded, settings);
+  }
 
-  res.json({ ok: true, processed: enriched.length });
+  res.json({ ok: true, stage, processed: enriched.length });
 });
 
 // GET /spikes — dashboard polls this for live data
