@@ -80,17 +80,15 @@ async function saveSettings(settings) {
 }
 
 // ─── Trusted financial news domains — ONLY these sources are allowed ────────
+// Approved news sources — ONLY articles from these domains are allowed
 const TRUSTED_DOMAINS = [
-  "fxstreet.com","forexfactory.com","dailyfx.com","forex.com",
-  "coindesk.com","cointelegraph.com","decrypt.co","theblock.co",
-  "kitco.com","mining.com","metalsbulletin.com",
-  "marketwatch.com","wsj.com","reuters.com","bloomberg.com",
-  "ft.com","cnbc.com","investing.com","benzinga.com",
-  "seekingalpha.com","finance.yahoo.com","barrons.com",
-  "thestreet.com","zerohedge.com","financialpost.com",
-  "oilprice.com","naturalgasintel.com","ngas.news",
-  "nikkei.com","scmp.com","businesstimes.com.sg",
-  "investing.com","ph.investing.com"
+  "forexfactory.com",           // Forex Factory — economic calendar
+  "nfs.faireconomy.media",      // Forex Factory RSS feed domain
+  "fxstreet.com",               // FXStreet — forex and financial news
+  "marketwatch.com",            // MarketWatch — stocks, indices, futures
+  "coindesk.com",               // CoinDesk — crypto news
+  "investing.com",              // Investing.com — all asset classes
+  "ph.investing.com"            // Investing.com Philippines region
 ];
 
 // ─── Blocked URL paths — non-financial sections of news sites ────────────────
@@ -321,17 +319,16 @@ function classifySymbol(symbol) {
 }
 
 // ─── RSS feed URLs ────────────────────────────────────────────────────────────
+// RSS feed URLs — approved sources only
 const RSS_FEEDS = {
-  fxstreet:      "https://www.fxstreet.com/rss/news",
-  forexfactory:  "https://nfs.faireconomy.media/ff_calendar_thisweek.xml",
-  coindesk:      "https://www.coindesk.com/arc/outboundfeeds/rss/",
-  cointelegraph: "https://cointelegraph.com/rss",
-  kitco:         "https://www.kitco.com/rss/kitconews.rss",
-  marketwatch:   "https://feeds.marketwatch.com/marketwatch/topstories",
-  investing_news:"https://www.investing.com/rss/news.rss",
-  investing_fx:  "https://www.investing.com/rss/news_14.rss",
-  investing_comm:"https://www.investing.com/rss/news_4.rss",
-  investing_stock:"https://www.investing.com/rss/news_25.rss",
+  fxstreet:        "https://www.fxstreet.com/rss/news",
+  forexfactory:    "https://nfs.faireconomy.media/ff_calendar_thisweek.xml",
+  marketwatch:     "https://feeds.marketwatch.com/marketwatch/topstories",
+  coindesk:        "https://www.coindesk.com/arc/outboundfeeds/rss/",
+  investing_news:  "https://www.investing.com/rss/news.rss",
+  investing_fx:    "https://www.investing.com/rss/news_14.rss",
+  investing_comm:  "https://www.investing.com/rss/news_4.rss",
+  investing_stock: "https://www.investing.com/rss/news_25.rss",
   investing_crypto:"https://www.investing.com/rss/news_301.rss",
 };
 
@@ -387,19 +384,19 @@ async function fetchForexNews(currency, pairSymbol) {
     } catch(e) { console.error("Forex Factory fallback error:", e.message); }
   }
 
-  // Fallback 2 — Investing.com forex news (strict keyword filter for broad source)
+  // Fallback 2 — Investing.com forex RSS (strict keyword filter)
   if (items.length === 0) {
     const raw = await fetchRSS(RSS_FEEDS.investing_fx, keywords, "Investing.com");
     items = filterNewsByKeywords(raw, keywords);
   }
 
-  // Fallback 3 — Investing.com general news with strict filter
+  // Fallback 3 — Investing.com general news (strict keyword filter)
   if (items.length === 0) {
     const raw = await fetchRSS(RSS_FEEDS.investing_news, keywords, "Investing.com");
     items = filterNewsByKeywords(raw, keywords);
   }
 
-  // Fallback 4 — Forex Factory calendar events for this currency
+  // Fallback 4 — Forex Factory economic calendar events
   if (items.length === 0) {
     items = await fetchCalendarEvents(currency);
   }
@@ -451,14 +448,15 @@ async function fetchCryptoNews(coinSymbol) {
   // Try CoinDesk first
   let items = await fetchRSS(RSS_FEEDS.coindesk, keywords, "CoinDesk");
 
-  // Fallback 1 — CoinTelegraph
-  if (items.length === 0) {
-    items = await fetchRSS(RSS_FEEDS.cointelegraph, keywords, "CoinTelegraph");
-  }
-
-  // Fallback 2 — Investing.com crypto
+  // Fallback 1 — Investing.com crypto RSS
   if (items.length === 0) {
     items = await fetchRSS(RSS_FEEDS.investing_crypto, keywords, "Investing.com");
+  }
+
+  // Fallback 2 — Investing.com general news
+  if (items.length === 0) {
+    const raw = await fetchRSS(RSS_FEEDS.investing_news, keywords, "Investing.com");
+    items = filterNewsByKeywords(raw, keywords);
   }
 
   cache.set(cacheKey, items);
@@ -472,17 +470,17 @@ async function fetchMetalsNews(symbol) {
 
   const keywords = getSymbolKeywords(symbol);
 
-  // Kitco — specialist gold/silver/platinum/palladium news
-  let items = await fetchRSS(RSS_FEEDS.kitco, keywords, "Kitco");
+  // Primary — Investing.com commodities RSS
+  let items = await fetchRSS(RSS_FEEDS.investing_comm, keywords, "Investing.com");
 
-  // Fallback 1 — MarketWatch
+  // Fallback 1 — FXStreet (covers gold/metals)
   if (items.length === 0) {
-    items = await fetchRSS(RSS_FEEDS.marketwatch, keywords, "MarketWatch");
+    items = await fetchRSS(RSS_FEEDS.fxstreet, keywords, "FXStreet");
   }
 
-  // Fallback 2 — Investing.com commodities
+  // Fallback 2 — MarketWatch
   if (items.length === 0) {
-    items = await fetchRSS(RSS_FEEDS.investing_comm, keywords, "Investing.com");
+    items = await fetchRSS(RSS_FEEDS.marketwatch, keywords, "MarketWatch");
   }
 
   cache.set(cacheKey, items);
