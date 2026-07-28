@@ -904,7 +904,10 @@
     const sym  = (sp.symbol || "").replace(".std","");
     const tf   = sp.tfName === "H1-LIVE" ? "H1 (Live)" : sp.tfName === "M5-LIVE" ? "M5 (Live)" : "H1 (Closed)";
     const news = (sp.news && sp.news[0] && sp.news[0].title) ? sp.news[0].title : "No related news found";
-    const ts   = sp.receivedAt ? new Date(sp.receivedAt).toLocaleString() : sp.candleTime;
+    const _d   = sp.receivedAt ? new Date(sp.receivedAt) : null;
+    const ts   = _d
+      ? `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')} ${_d.getHours()}:${_d.getMinutes()}:${_d.getSeconds()}`
+      : sp.candleTime;
     const row  = [
       ts,
       sp.classif || "",
