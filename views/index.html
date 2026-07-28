@@ -849,9 +849,7 @@
           <div class="news-section">
             <div class="news-label">📰 Related News</div>
             ${newsHtml}
-            ${["EURUSD","USDJPY","GBPUSD","GBPJPY","XAUUSD","BTCUSD"].includes(symClean)
-              ? `<button class="copy-btn" onclick='copyToSheet(this,${JSON.stringify(sp).replace(/'/g,"&apos;")})'>⧉ Copy to Sheet</button>`
-              : ""}
+            <button class="copy-btn" onclick='copyToSheet(this,${JSON.stringify(sp).replace(/'/g,"&apos;")})'>⧉ Copy to Sheet</button>
           </div>
         </div>`;
     }).join("");
