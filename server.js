@@ -27,7 +27,7 @@ const cache  = new NodeCache({ stdTTL: 300 }); // cache news 5 min
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.resolve(__dirname, "public")));
+app.use(express.static(path.resolve(__dirname, "views")));
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const PORT          = process.env.PORT         || 3000;
@@ -763,7 +763,7 @@ app.post("/settings", async (req, res) => {
 
 // GET / — serve dashboard
 app.get("/", (req, res) => {
-  res.sendFile(path.resolve(__dirname, "public", "index.html"));
+  res.sendFile(path.resolve(__dirname, "views", "index.html"));
 });
 
 // ── Local dev: start server directly
